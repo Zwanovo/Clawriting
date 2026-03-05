@@ -5,4 +5,4 @@ It uses a Pyramid Principle workflow: first produce a deep (3+ levels) argument 
 
 If you need production-grade long-form generation—structured, auditable, and resilient to token limits—this Skill is built to ship.
 
-![Uploading image.png…]()
+<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/651c23f8-8e8e-45df-86c9-aa549a543968" />
