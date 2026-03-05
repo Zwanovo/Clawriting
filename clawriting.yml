@@ -1,0 +1,538 @@
+apiVersion: openclaw.ai/v1
+kind: Skill
+metadata:
+  name: clawriting
+  displayName: Pyramid Paper Writer (金字塔分段写作)
+  version: 1.0.0
+  description: >
+    先生成≥3级金字塔结构大纲，再按段落任务卡分段生成正文，通过“GlobalBrief/SectionBrief”低token记忆绕过上下文窗口限制；
+    支持断点续写、质量门禁、全文拼装与一致性校验。
+  tags: [writing, outline, pyramid, longform, enterprise, chunking]
+  owner: ziyin.wang
+  links:
+    repo: ${ENV:SKILL_REPO_URL:-""}
+
+spec:
+  runtime:
+    engine: openclaw
+    # 建议：不同阶段可用不同模型；也可统一用一个大模型
+    models:
+      planner: ${ENV:MODEL_PLANNER:-"gpt-5"}
+      writer: ${ENV:MODEL_WRITER:-"gpt-5"}
+      qa: ${ENV:MODEL_QA:-"gpt-5"}
+    timeouts:
+      llmSeconds: 120
+      totalSeconds: 3600
+
+  # ====== 输入/输出契约 ======
+  interface:
+    inputs:
+      topic:
+        type: string
+        required: true
+        description: 论文/报告主题
+      thesis_statement:
+        type: string
+        required: false
+        description: 核心论点/结论（不提供则由系统生成，但企业场景建议必填）
+      audience:
+        type: string
+        required: false
+        default: "internal"
+        enum: ["academic", "internal", "investment", "pre-sales", "public"]
+      style:
+        type: string
+        required: false
+        default: "institutional_review"
+        enum: ["academic", "institutional_review", "whitepaper", "consulting_report"]
+      language:
+        type: string
+        required: false
+        default: "zh-CN"
+        enum: ["zh-CN", "en-US", "bilingual"]
+      length_target:
+        type: object
+        required: false
+        description: 目标长度（字数/页数二选一）
+        properties:
+          words:
+            type: integer
+            minimum: 500
+          pages:
+            type: integer
+            minimum: 1
+      constraints:
+        type: object
+        required: false
+        description: 写作约束（必须包含/不包含、引用策略等）
+        properties:
+          must_include:
+            type: array
+            items: { type: string }
+          must_not_include:
+            type: array
+            items: { type: string }
+          citations:
+            type: string
+            default: "placeholder"
+            enum: ["none", "placeholder", "required"]
+          structure_level_min:
+            type: integer
+            default: 3
+            minimum: 3
+          section_word_budget:
+            type: integer
+            default: 800
+            minimum: 200
+            maximum: 2000
+      quality_bar:
+        type: object
+        required: false
+        properties:
+          require_conclusion_sentence:
+            type: boolean
+            default: true
+          require_bridge_sentence:
+            type: boolean
+            default: true
+          require_evidence_points:
+            type: boolean
+            default: true
+          max_rewrites_per_section:
+            type: integer
+            default: 1
+            minimum: 0
+            maximum: 3
+
+    outputs:
+      outline:
+        type: object
+        description: ≥3级金字塔结构大纲（带 claim/reasoning/evidence_needed/expected_output/dependencies）
+      section_tasks:
+        type: array
+        items: { type: object }
+        description: 分段任务卡列表（section_id/title/goal/must_include/word_budget/acceptance_criteria）
+      draft_sections:
+        type: array
+        items: { type: object }
+        description: 段落正文与段落简报（SectionBrief）
+      final_draft:
+        type: string
+        description: 拼装后的全文
+      consistency_report:
+        type: object
+        description: 一致性与质量检查报告（问题清单+修复建议）
+
+  # ====== 状态与持久化（断点续写关键） ======
+  state:
+    store:
+      type: ${ENV:STATE_STORE_TYPE:-"kv"}      # kv / redis / s3 / db
+      dsn: ${ENV:STATE_STORE_DSN:-"kv://local"}
+    namespace: "pyramid-paper-writer"
+    keys:
+      run_id: "${CTX.run_id}"
+      outline_hash: "${STATE.global_brief.outline_hash}"
+    retentionDays: 30
+    schema:
+      global_brief: { type: object }
+      outline: { type: object }
+      section_tasks: { type: array }
+      section_briefs: { type: object }  # map<section_id, SectionBrief>
+      draft_sections: { type: array }
+      progress:
+        type: object
+        properties:
+          status: { type: string }
+          current_section_id: { type: string }
+          completed_section_ids: { type: array, items: { type: string } }
+          rewrite_counts: { type: object } # map<section_id, int>
+
+  # ====== 可观测性 ======
+  observability:
+    logging:
+      level: ${ENV:LOG_LEVEL:-"INFO"}
+      fields:
+        - run_id
+        - outline_hash
+        - section_id
+        - model
+        - tokens_in
+        - tokens_out
+        - rewrite_count
+        - gate_fail_reason
+    metrics:
+      - name: section_pass_rate
+        type: ratio
+        numerator: "count(section_gate_pass)"
+        denominator: "count(section_attempt)"
+      - name: avg_rewrites_per_section
+        type: gauge
+        expr: "avg(progress.rewrite_counts.*)"
+      - name: tokens_total
+        type: counter
+        expr: "sum(tokens_in + tokens_out)"
+
+  # ====== 安全与合规（可按企业策略加严） ======
+  security:
+    allow_unverified_citations: true           # placeholder 模式允许引用占位符
+    forbid_fabricated_sources: true
+    data_policy:
+      confidential_mode: ${ENV:CONFIDENTIAL_MODE:-false}
+      prohibit_external_memory: false
+      redaction:
+        enabled: ${ENV:REDACTION_ENABLED:-false}
+        patterns:
+          - "(\\b\\d{15,19}\\b)"     # 简单示例：疑似卡号
+          - "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})"
+
+  # ====== 提示词模板 ======
+  prompts:
+    normalize_spec:
+      system: |
+        你是企业级研究写作编排器。目标是把用户需求规整为可执行 WritingSpec。
+        输出必须为 JSON，不要输出多余文本。
+      user: |
+        主题：{{topic}}
+        核心论点：{{thesis_statement}}
+        受众：{{audience}}
+        风格：{{style}}
+        语言：{{language}}
+        目标长度：{{length_target}}
+        约束：{{constraints}}
+        质量阈值：{{quality_bar}}
+        请输出统一 WritingSpec（含：thesis 若缺失则补全；术语表definitions；style_rules；禁用项；结构层级要求；每段字数预算）。
+    build_outline:
+      system: |
+        你是机构研究写作者，先结构后内容。
+        必须输出≥{{constraints.structure_level_min}}级金字塔结构大纲；禁止写正文。
+        每个节点必须包含：claim、reasoning、evidence_needed、expected_output、dependencies。
+        输出必须为 JSON，字段：outline_tree（树形）、toc（扁平目录）、assumptions（如有）。
+      user: |
+        WritingSpec：{{writing_spec}}
+    plan_chunks:
+      system: |
+        你是写作任务编排器。把大纲映射为可执行的 section_tasks。
+        规则：
+        - 每个 task 对应一个 section_id（如 2.3.1）
+        - 给出 goal（Define/Compare/Prove/Refute/Synthesize/Implication 等）
+        - must_include 至少包含该节点 claim 的关键短语
+        - word_budget 取 {{constraints.section_word_budget}}（可根据重要性上下浮动±20%）
+        - acceptance_criteria 必须含：结论句、承上启下句、覆盖 must_include
+        输出必须为 JSON：{ "section_tasks": [...] }
+      user: |
+        WritingSpec：{{writing_spec}}
+        Outline：{{outline}}
+    write_section:
+      system: |
+        你只写“当前段落”，不要写其他章节。
+        必须满足 task card 的验收条件。
+        输出严格包含两段，且用标签分隔：
+        [DRAFT]
+        ...正文...
+        [/DRAFT]
+        [BRIEF]
+        ...120-200 tokens 段落简报（one_sentence_conclusion/evidence_points/bridge_to_next/citations_used/risks）...
+        [/BRIEF]
+        禁止引入与 GlobalBrief 冲突的新结论。
+      user: |
+        GlobalBrief：{{global_brief}}
+        RelevantBriefs：{{relevant_briefs}}
+        TaskCard：{{task_card}}
+    stitch:
+      system: |
+        你是编辑与排版助手。任务：拼装全文并做轻量润色（不改结论、不引入新事实）。
+        统一：标题层级、编号、术语、引用占位符格式。
+        输出为纯正文（Markdown 允许）。
+      user: |
+        目录（toc）：{{outline.toc}}
+        段落正文（按 section_id 排序）：{{draft_sections}}
+    qa:
+      system: |
+        你是质量审计员。输出一致性与质量检查报告（JSON）。
+        检查：claim-evidence trace、跑题/重复、术语一致、风格一致、结论是否被支撑、禁用项。
+        输出格式：
+        {
+          "summary": "...",
+          "issues": [{"severity":"high|medium|low","section_id":"...","type":"...","detail":"...","fix":"..."}],
+          "repair_plan": [{"section_id":"...","action":"rewrite|minor_edit","notes":"..."}]
+        }
+      user: |
+        GlobalBrief：{{global_brief}}
+        Outline：{{outline}}
+        Draft：{{final_draft}}
+        Constraints：{{constraints}}
+
+  # ====== 质量门禁（规则化校验 + 失败重写） ======
+  quality_gates:
+    outline_gate:
+      rules:
+        - name: min_depth
+          type: jsonpath
+          expr: "$.outline_tree.depth"
+          op: ">="
+          value: "${{inputs.constraints.structure_level_min}}"
+        - name: node_required_fields
+          type: jsonschema
+          schemaRef: "schemas/outline_node_required_fields.json"
+    section_gate:
+      rules:
+        - name: must_include_phrases
+          type: contains_all
+          scope: draft
+          valuesFrom: "task_card.must_include"
+        - name: word_budget
+          type: word_count
+          scope: draft
+          min: "task_card.word_budget * 0.9"
+          max: "task_card.word_budget * 1.1"
+        - name: banned_terms
+          type: not_contains_any
+          scope: draft
+          valuesFrom: "writing_spec.banned_terms"
+        - name: require_conclusion_sentence
+          type: regex
+          enabledFrom: "quality_bar.require_conclusion_sentence"
+          scope: draft
+          # 简化示例：检测“因此/综上/结论/可以认为”等信号词，企业可替换为更强规则
+          pattern: "(因此|综上|结论|可以认为|由此可见)"
+        - name: require_bridge_sentence
+          type: regex
+          enabledFrom: "quality_bar.require_bridge_sentence"
+          scope: brief
+          pattern: "(下一节|下文将|接下来|进一步)"
+    final_gate:
+      rules:
+        - name: structure_alignment
+          type: jsonpath
+          expr: "$.outline_hash"
+          op: "=="
+          valueFrom: "global_brief.outline_hash"
+
+  retry_policy:
+    llm:
+      maxRetries: 2
+      backoff:
+        type: exponential
+        baseMs: 500
+        maxMs: 5000
+    section_rewrite:
+      maxRewritesFrom: "quality_bar.max_rewrites_per_section"
+
+  # ====== 工作流编排（核心） ======
+  workflow:
+    entry: normalize
+    nodes:
+
+      - id: normalize
+        type: llm.generate
+        model: "${{runtime.models.planner}}"
+        promptRef: prompts.normalize_spec
+        inputMap:
+          topic: "${{inputs.topic}}"
+          thesis_statement: "${{inputs.thesis_statement}}"
+          audience: "${{inputs.audience}}"
+          style: "${{inputs.style}}"
+          language: "${{inputs.language}}"
+          length_target: "${{inputs.length_target}}"
+          constraints: "${{inputs.constraints}}"
+          quality_bar: "${{inputs.quality_bar}}"
+        outputTo: "STATE.writing_spec"
+        next: build_outline
+
+      - id: build_outline
+        type: llm.generate
+        model: "${{runtime.models.planner}}"
+        promptRef: prompts.build_outline
+        inputMap:
+          writing_spec: "${{STATE.writing_spec}}"
+          constraints: "${{inputs.constraints}}"
+        outputTo: "STATE.outline"
+        post:
+          - type: compute_hash
+            input: "${{STATE.outline}}"
+            algo: "sha256"
+            outputTo: "STATE.global_brief.outline_hash"
+          - type: build_global_brief
+            input:
+              writing_spec: "${{STATE.writing_spec}}"
+              outline: "${{STATE.outline}}"
+            outputTo: "STATE.global_brief"
+        gates: [outline_gate]
+        next: plan_chunks
+
+      - id: plan_chunks
+        type: llm.generate
+        model: "${{runtime.models.planner}}"
+        promptRef: prompts.plan_chunks
+        inputMap:
+          writing_spec: "${{STATE.writing_spec}}"
+          outline: "${{STATE.outline}}"
+          constraints: "${{inputs.constraints}}"
+        outputTo: "STATE.section_tasks"
+        next: write_sections
+
+      - id: write_sections
+        type: foreach
+        itemsFrom: "STATE.section_tasks"
+        itemVar: task_card
+        # 支持断点续写：如果已完成则跳过
+        skipIf:
+          type: contains
+          collectionFrom: "STATE.progress.completed_section_ids"
+          valueFrom: "task_card.section_id"
+        do:
+          - id: write_one
+            type: llm.generate
+            model: "${{runtime.models.writer}}"
+            promptRef: prompts.write_section
+            inputMap:
+              global_brief: "${{STATE.global_brief}}"
+              relevant_briefs:
+                type: select_briefs
+                from: "STATE.section_briefs"
+                by:
+                  - "task_card.section_id"
+                  - "task_card.inputs"   # 依赖的 brief id
+              task_card: "${{task_card}}"
+            outputTo: "TMP.section_raw"
+            post:
+              - type: parse_tagged_output
+                input: "${{TMP.section_raw}}"
+                tags:
+                  draft: "[DRAFT]...[/DRAFT]"
+                  brief: "[BRIEF]...[/BRIEF]"
+                outputTo:
+                  draft: "TMP.section_draft"
+                  brief: "TMP.section_brief"
+              - type: append_array
+                arrayTo: "STATE.draft_sections"
+                value:
+                  section_id: "${{task_card.section_id}}"
+                  title: "${{task_card.title}}"
+                  draft: "${{TMP.section_draft}}"
+                  brief: "${{TMP.section_brief}}"
+                  version: 1
+              - type: upsert_map
+                mapTo: "STATE.section_briefs"
+                key: "${{task_card.section_id}}"
+                value: "${{TMP.section_brief}}"
+              - type: progress_mark
+                progressTo: "STATE.progress"
+                section_id: "${{task_card.section_id}}"
+                action: "attempt"
+
+          - id: section_gate_check
+            type: gate.check
+            gateRef: section_gate
+            inputMap:
+              draft: "${{TMP.section_draft}}"
+              brief: "${{TMP.section_brief}}"
+              task_card: "${{task_card}}"
+              writing_spec: "${{STATE.writing_spec}}"
+              quality_bar: "${{inputs.quality_bar}}"
+            onFail:
+              - id: rewrite_if_allowed
+                type: conditional
+                when:
+                  type: lt
+                  leftFrom: "STATE.progress.rewrite_counts[task_card.section_id]"
+                  rightFrom: "inputs.quality_bar.max_rewrites_per_section"
+                then:
+                  - id: rewrite_one
+                    type: llm.generate
+                    model: "${{runtime.models.writer}}"
+                    promptRef: prompts.write_section
+                    inputMap:
+                      global_brief: "${{STATE.global_brief}}"
+                      relevant_briefs:
+                        type: select_briefs
+                        from: "STATE.section_briefs"
+                        by:
+                          - "task_card.section_id"
+                          - "task_card.inputs"
+                      task_card:
+                        type: merge
+                        base: "${{task_card}}"
+                        override:
+                          acceptance_criteria:
+                            - "根据 gate_fail_reason 修复后再输出"
+                          must_include:
+                            type: extend
+                            baseFrom: "task_card.must_include"
+                            add:
+                              - "修复：{{STATE.last_gate_fail_reason}}"
+                    outputTo: "TMP.section_raw_rewrite"
+                    post:
+                      - type: parse_tagged_output
+                        input: "${{TMP.section_raw_rewrite}}"
+                        tags:
+                          draft: "[DRAFT]...[/DRAFT]"
+                          brief: "[BRIEF]...[/BRIEF]"
+                        outputTo:
+                          draft: "TMP.section_draft"
+                          brief: "TMP.section_brief"
+                      - type: update_last_in_array
+                        arrayTo: "STATE.draft_sections"
+                        match:
+                          section_idFrom: "task_card.section_id"
+                        set:
+                          draft: "${{TMP.section_draft}}"
+                          brief: "${{TMP.section_brief}}"
+                          version: 2
+                      - type: upsert_map
+                        mapTo: "STATE.section_briefs"
+                        key: "${{task_card.section_id}}"
+                        value: "${{TMP.section_brief}}"
+                      - type: progress_mark
+                        progressTo: "STATE.progress"
+                        section_id: "${{task_card.section_id}}"
+                        action: "rewrite"
+                else:
+                  - id: accept_with_warning
+                    type: progress_mark
+                    progressTo: "STATE.progress"
+                    section_id: "${{task_card.section_id}}"
+                    action: "accepted_with_warning"
+
+          - id: mark_complete
+            type: progress_mark
+            progressTo: "STATE.progress"
+            section_id: "${{task_card.section_id}}"
+            action: "complete"
+
+        next: stitch
+
+      - id: stitch
+        type: llm.generate
+        model: "${{runtime.models.writer}}"
+        promptRef: prompts.stitch
+        inputMap:
+          outline:
+            toc: "${{STATE.outline.toc}}"
+          draft_sections:
+            type: sort_sections
+            from: "STATE.draft_sections"
+            by: "section_id"
+        outputTo: "STATE.final_draft"
+        next: qa
+
+      - id: qa
+        type: llm.generate
+        model: "${{runtime.models.qa}}"
+        promptRef: prompts.qa
+        inputMap:
+          global_brief: "${{STATE.global_brief}}"
+          outline: "${{STATE.outline}}"
+          final_draft: "${{STATE.final_draft}}"
+          constraints: "${{inputs.constraints}}"
+        outputTo: "STATE.consistency_report"
+        next: finish
+
+      - id: finish
+        type: return
+        outputs:
+          outline: "${{STATE.outline}}"
+          section_tasks: "${{STATE.section_tasks}}"
+          draft_sections: "${{STATE.draft_sections}}"
+          final_draft: "${{STATE.final_draft}}"
+          consistency_report: "${{STATE.consistency_report}}"
