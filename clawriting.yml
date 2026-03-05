@@ -2,7 +2,7 @@ apiVersion: openclaw.ai/v1
 kind: Skill
 metadata:
   name: clawriting
-  displayName: Pyramid Paper Writer (金字塔分段写作)
+  displayName: Clawriting
   version: 1.0.0
   description: >
     先生成≥3级金字塔结构大纲，再按段落任务卡分段生成正文，通过“GlobalBrief/SectionBrief”低token记忆绕过上下文窗口限制；
