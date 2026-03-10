@@ -1,8 +1,75 @@
 ![Clawriting](https://github.com/user-attachments/assets/9b7c5e96-fd52-44b6-af31-d4e5e2fbcd83)
 
+<div align="center">
+
+<br/>
+<br/>
+
+<h3>Clawriting：面向长文生成的 AI 写作智能体</h3>
+
+<p>让 AI 先搭框架，再分段写作，把复杂长文生成变成稳定、可复用、可落地的流程</p>
+
+<br/>
+
+[![Awesome](https://awesome.re/badge.svg)](https://awesome.re)
+![写作场景](https://img.shields.io/badge/场景-长文写作-orange?style=flat-square)
+![语言](https://img.shields.io/badge/语言-中文%20%7C%20English-red?style=flat-square)
+![适用人群](https://img.shields.io/badge/适用-研究%2F内容%2F方案写作-green?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+
+**[快速开始](#-快速开始)** · **[核心能力](#-核心能力)** · **[应用场景](#-应用场景)** · **[贡献指南](CONTRIBUTING.md)**
+
+</div>
+
+---
+
 # Clawriting
-Clawriting is an enterprise-ready OpenClaw Skill for reliably generating long-form papers and research reports under strict context-window limits.
 
-It uses a Pyramid Principle workflow: first produce a deep (3+ levels) argument outline with explicit claims, reasoning paths, and evidence needs, then converts the outline into section task cards and writes the draft section-by-section. To keep global coherence without carrying the full draft each turn, it maintains ultra-compact GlobalBrief / SectionBrief memories, enabling checkpointed, resumable generation, quality gates with controlled rewrites, and final stitching + consistency QA (terminology, duplication, claim–evidence alignment).
+> 不只是“让 AI 写点东西”，而是把 **长文生成** 这件事做成一个可拆解、可控、可复用的完整系统。
 
-If you need production-grade long-form generation—structured, auditable, and resilient to token limits—this Skill is built to ship.
+Clawriting 是一个面向 **长文本生成** 场景设计的 AI 写作能力封装。  
+它通过 **多轮收束需求 → 生成金字塔结构大纲 → 分段写作 → 汇总成文** 的方式，解决传统 AI 一次性生成长文时常见的上下文不足、结构松散、篇幅不稳定、内容重复等问题。
+
+无论你要写的是研究报告、行业分析、方案文档、论文草稿，还是企业级汇报材料，Clawriting 都能把写作过程从“碰运气”升级为“流程化生产”。
+
+---
+
+## ✨ 为什么做 Clawriting？
+
+传统大模型在处理长文任务时，常见问题包括：
+
+- 一次性输出过长内容时，容易触达上下文窗口或单次输出上限
+- 开头写得完整，后文逐渐变短、变浅、变散
+- 结构依赖 prompt 临时约束，稳定性差
+- 内容看似流畅，但层级关系不清晰，缺乏“先结论后展开”的表达方式
+- 很难复用同一套写作能力到不同业务场景
+
+Clawriting 的核心思路是：
+
+> **不要一次写完，而是先把文章“搭起来”，再按结构把它“写出来”。**
+
+---
+
+## 🚀 快速开始
+
+### 1. 适用场景
+
+Clawriting 特别适合以下任务：
+
+- 行业研究报告
+- 市场分析报告
+- 企业解决方案文档
+- 调研综述
+- 产品方案 / PRD 衍生文档
+- 学术论文草稿
+- 需要明确章节结构的长篇内容
+
+### 2. 工作方式
+
+Clawriting 的生成链路通常分为 4 步：
+
+```text
+1️⃣ 多轮问答，收束主题、边界、读者对象与输出目标
+2️⃣ 按金字塔原理生成 3 级以上结构化大纲
+3️⃣ 基于大纲逐章逐节分段生成内容
+4️⃣ 汇总、润色、校验，形成完整长文
