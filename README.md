@@ -1,10 +1,7 @@
 ![Clawriting](https://github.com/user-attachments/assets/9b7c5e96-fd52-44b6-af31-d4e5e2fbcd83)
-
 <div align="center">
-
 <br/>
 <br/>
-
 <h3>Clawriting：面向长文生成的 AI 写作智能体</h3>
 
 <p>让 AI 先搭框架，再分段写作，把复杂长文生成变成稳定、可复用、可落地的流程</p>
@@ -17,7 +14,6 @@
 ![适用人群](https://img.shields.io/badge/适用-研究%2F内容%2F方案写作-green?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-**[快速开始](#-快速开始)** · **[核心能力](#-核心能力)** · **[应用场景](#-应用场景)** · **[贡献指南](CONTRIBUTING.md)**
 
 </div>
 
