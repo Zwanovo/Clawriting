@@ -9,11 +9,10 @@
 
 <br/>
 
-[![Awesome](https://awesome.re/badge.svg)](https://awesome.re)
 ![写作场景](https://img.shields.io/badge/场景-长文写作-orange?style=flat-square)
 ![语言](https://img.shields.io/badge/语言-中文%20%7C%20English-red?style=flat-square)
 ![适用人群](https://img.shields.io/badge/适用-研究%2F内容%2F方案写作-green?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+
 
 
 </div>
