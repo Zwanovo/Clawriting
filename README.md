@@ -1,5 +1,5 @@
-![Clawriting](https://github.com/user-attachments/assets/9b7c5e96-fd52-44b6-af31-d4e5e2fbcd83)
 <div align="center">
+![Clawriting](https://github.com/user-attachments/assets/9b7c5e96-fd52-44b6-af31-d4e5e2fbcd83)
 <br/>
 <br/>
 <h3>Clawriting：面向长文生成的 AI 写作智能体</h3>
@@ -65,7 +65,7 @@ Clawriting 特别适合以下任务：
 Clawriting 的生成链路通常分为 4 步：
 
 ```text
-1️⃣ 多轮问答，收束主题、边界、读者对象与输出目标
+1️⃣ 多轮问答，收束主题、引用内容、边界、读者对象与输出目标
 2️⃣ 按金字塔原理生成 3 级以上结构化大纲
 3️⃣ 基于大纲逐章逐节分段生成内容
 4️⃣ 汇总、润色、校验，形成完整长文
