@@ -1,5 +1,6 @@
 <div align="center">
-![Clawriting](https://github.com/user-attachments/assets/9b7c5e96-fd52-44b6-af31-d4e5e2fbcd83)
+![Clawriting](https://github.com/user-attachments/assets/8e47fb94-e538-4e4c-aa04-005b4dbf83be)
+
 <br/>
 <br/>
 <h3>Clawriting：面向长文生成的 AI 写作智能体</h3>
