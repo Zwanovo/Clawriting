@@ -3,7 +3,6 @@
 ![Clawriting](https://github.com/user-attachments/assets/8e47fb94-e538-4e4c-aa04-005b4dbf83be)
 
 <br/>
-<br/>
 <h3>Clawriting：面向长文生成的 AI 写作智能体</h3>
 
 <p>让 AI 先搭框架，再分段写作，把复杂长文生成变成稳定、可复用、可落地的流程</p>
