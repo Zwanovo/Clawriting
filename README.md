@@ -1,3 +1,5 @@
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/9846fa8a-bac7-4981-8a6a-29e94b2c72ab" />
+
 # Clawriting
 Clawriting is an enterprise-ready OpenClaw Skill for reliably generating long-form papers and research reports under strict context-window limits.
 
@@ -5,4 +7,3 @@ It uses a Pyramid Principle workflow: first produce a deep (3+ levels) argument 
 
 If you need production-grade long-form generation—structured, auditable, and resilient to token limits—this Skill is built to ship.
 
-<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/651c23f8-8e8e-45df-86c9-aa549a543968" />
